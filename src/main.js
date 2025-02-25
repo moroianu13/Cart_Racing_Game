@@ -1,10 +1,10 @@
-// Main entry point for the cart racing game
-
+// Import game dependencies
 import GameController from './game/controllers/gameController.js';
 import InputController from './game/controllers/inputController.js';
 import renderer from './engine/renderer.js';
 import { playMusic } from './assets/audio/music.js';
 import soundEffects from './assets/audio/soundEffects.js';
+import AICar from './game/entities/aiCar.js';
 
 // Game state constants
 const GAME_STATE = {
@@ -28,8 +28,13 @@ let playerX = 400;
 let playerY = 500;
 let playerSpeed = 0;
 let playerAngle = 0;
+let engineSound;
 let gameController;
 let inputController;
+let aiCars = [];
+let lapCount = 0;
+let lastCheckpointPassed = false;
+let crashDebounce = false;
 
 // Initialize the game
 function init() {
@@ -80,7 +85,7 @@ function gameLoop(timestamp) {
     // Update and render based on game state
     switch (gameState) {
         case GAME_STATE.START:
-            // Draw a simple start screen on canvas
+            // Draw a start screen
             ctx.fillStyle = 'white';
             ctx.font = '48px Arial';
             ctx.textAlign = 'center';
@@ -98,6 +103,8 @@ function gameLoop(timestamp) {
             ctx.font = '48px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('Game Over!', CONFIG.canvasWidth / 2, 200);
+            ctx.font = '24px Arial';
+            ctx.fillText(`Laps Completed: ${lapCount}`, CONFIG.canvasWidth / 2, 260);
             break;
     }
     
@@ -107,9 +114,16 @@ function gameLoop(timestamp) {
 
 // Update game logic
 function updateGame(deltaTime) {
+    // Update AI cars
+    aiCars.forEach(car => car.update(deltaTime));
+    
     // Check player input
     if (inputController.isKeyPressed('up')) {
-        playerSpeed = Math.min(playerSpeed + 1, 200);
+        playerSpeed = Math.min(playerSpeed + 0.5, 200);
+        if (!engineSound) {
+            engineSound = true;
+            soundEffects.engineRunning.play();
+        }
     } else if (inputController.isKeyPressed('down')) {
         playerSpeed = Math.max(playerSpeed - 1, -50);
     } else {
@@ -124,13 +138,59 @@ function updateGame(deltaTime) {
         playerAngle += 0.05;
     }
     
-    // Update player position based on speed and angle
-    playerX += Math.sin(playerAngle) * playerSpeed * (deltaTime / 1000);
-    playerY -= Math.cos(playerAngle) * playerSpeed * (deltaTime / 1000);
+    // Calculate new position
+    const newX = playerX + Math.sin(playerAngle) * playerSpeed * (deltaTime / 1000);
+    const newY = playerY - Math.cos(playerAngle) * playerSpeed * (deltaTime / 1000);
     
-    // Keep player within canvas bounds
-    playerX = Math.max(50, Math.min(CONFIG.canvasWidth - 50, playerX));
-    playerY = Math.max(50, Math.min(CONFIG.canvasHeight - 50, playerY));
+    // Check if new position is on track
+    if (renderer.isPointOnTrack(newX, newY)) {
+        // If on track, update position
+        playerX = newX;
+        playerY = newY;
+        crashDebounce = false;
+    } else if (!crashDebounce) {
+        // If off track, play crash sound and slow down
+        soundEffects.crash.play();
+        playerSpeed *= 0.5;
+        crashDebounce = true;
+    }
+    
+    // Check lap completion
+    const finishLine = {
+        x: renderer.trackCenter.x,
+        y: renderer.trackCenter.y + renderer.trackOuterRadius.y - 10
+    };
+    
+    // Distance from player to finish line
+    const distanceToFinish = Math.sqrt(
+        Math.pow(playerX - finishLine.x, 2) + 
+        Math.pow(playerY - finishLine.y, 2)
+    );
+    
+    // Checkpoint halfway around track
+    const checkpointY = renderer.trackCenter.y - renderer.trackOuterRadius.y + 10;
+    const distanceToCheckpoint = Math.sqrt(
+        Math.pow(playerX - finishLine.x, 2) + 
+        Math.pow(playerY - checkpointY, 2)
+    );
+    
+    // If player crossed checkpoint, mark it
+    if (distanceToCheckpoint < 50) {
+        lastCheckpointPassed = true;
+    }
+    
+    // If player crossed finish line after checkpoint, count a lap
+    if (lastCheckpointPassed && distanceToFinish < 50) {
+        lapCount++;
+        lastCheckpointPassed = false;
+        document.getElementById('lap').textContent = `Lap: ${lapCount}/3`;
+        
+        // If completed 3 laps, end game
+        if (lapCount >= 3) {
+            soundEffects.victory.play();
+            gameState = GAME_STATE.GAME_OVER;
+        }
+    }
     
     // Update UI
     document.getElementById('speed').textContent = `Speed: ${Math.round(playerSpeed)} mph`;
@@ -141,10 +201,13 @@ function renderGame() {
     // Draw track
     renderer.drawTrack();
     
+    // Draw AI cars
+    aiCars.forEach(car => {
+        renderer.drawCar(car.position.x, car.position.y, car.position.angle, car.color);
+    });
+    
     // Draw player cart
     renderer.drawCar(playerX, playerY, playerAngle, 'red');
-    
-    // Additional rendering can be added here
 }
 
 // Start the game
@@ -154,13 +217,24 @@ function startGame() {
     document.getElementById('start-screen').classList.add('hidden');
     document.getElementById('hud').classList.remove('hidden');
     
-    // Reset player position
-    playerX = 400;
-    playerY = 500;
+    // Reset player position - start at the bottom of track
+    playerX = renderer.trackCenter.x;
+    playerY = renderer.trackCenter.y + renderer.trackOuterRadius.y - 50;
     playerSpeed = 0;
-    playerAngle = 0;
+    playerAngle = -Math.PI / 2; // Pointing up
     
-    // Play the engine start sound
+    // Reset lap counter
+    lapCount = 0;
+    lastCheckpointPassed = false;
+    
+    // Create AI opponents
+    aiCars = [
+        new AICar(renderer.trackCenter, 0, 1.2, 'blue'),
+        new AICar(renderer.trackCenter, 2, 1.0, 'green'),
+        new AICar(renderer.trackCenter, 4, 0.8, 'yellow')
+    ];
+    
+    // Play sounds
     soundEffects.engineStart.play();
     
     // Start the game controller
@@ -174,10 +248,21 @@ function restartGame() {
     document.getElementById('hud').classList.remove('hidden');
     
     // Reset player position
-    playerX = 400;
-    playerY = 500;
+    playerX = renderer.trackCenter.x;
+    playerY = renderer.trackCenter.y + renderer.trackOuterRadius.y - 50;
     playerSpeed = 0;
-    playerAngle = 0;
+    playerAngle = -Math.PI / 2; // Pointing up
+    
+    // Reset lap counter
+    lapCount = 0;
+    lastCheckpointPassed = false;
+    
+    // Create AI opponents
+    aiCars = [
+        new AICar(renderer.trackCenter, 0, 1.2, 'blue'),
+        new AICar(renderer.trackCenter, 2, 1.0, 'green'),
+        new AICar(renderer.trackCenter, 4, 0.8, 'yellow')
+    ];
     
     // Play the engine start sound
     soundEffects.engineStart.play();

@@ -1,3 +1,7 @@
+/**
+ * Game Renderer
+ * Handles all drawing operations and provides collision detection helpers
+ */
 class Renderer {
     constructor() {
         this.canvas = null;
@@ -5,6 +9,11 @@ class Renderer {
         this.width = 800;
         this.height = 600;
         this.initialized = false;
+        
+        // Track definition
+        this.trackInnerRadius = { x: 250, y: 150 };
+        this.trackOuterRadius = { x: 350, y: 250 };
+        this.trackCenter = { x: 400, y: 300 };
     }
     
     init(width, height) {
@@ -27,16 +36,34 @@ class Renderer {
     clear() {
         if (!this.initialized) return;
         this.ctx.clearRect(0, 0, this.width, this.height);
+        
+        // Draw grass background
+        this.ctx.fillStyle = '#228B22'; // Forest Green
+        this.ctx.fillRect(0, 0, this.width, this.height);
     }
     
     drawTrack() {
         if (!this.initialized) return;
-        // Draw track (simple oval)
-        this.ctx.strokeStyle = 'white';
-        this.ctx.lineWidth = 20;
+        
+        const { x: cx, y: cy } = this.trackCenter;
+        const { x: innerX, y: innerY } = this.trackInnerRadius;
+        const { x: outerX, y: outerY } = this.trackOuterRadius;
+        
+        // Draw outer track edge
+        this.ctx.fillStyle = '#333333'; // Dark gray for asphalt
         this.ctx.beginPath();
-        this.ctx.ellipse(this.width/2, this.height/2, 300, 200, 0, 0, Math.PI * 2);
-        this.ctx.stroke();
+        this.ctx.ellipse(cx, cy, outerX, outerY, 0, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        // Draw inner track edge (creates the oval track)
+        this.ctx.fillStyle = '#228B22'; // Forest Green for grass infield
+        this.ctx.beginPath();
+        this.ctx.ellipse(cx, cy, innerX, innerY, 0, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        // Draw starting line
+        this.ctx.fillStyle = 'white';
+        this.ctx.fillRect(cx - 5, cy + innerY, 10, outerY - innerY);
     }
     
     drawCar(x, y, angle, color = 'red') {
@@ -58,6 +85,20 @@ class Renderer {
         this.ctx.fillRect(10, 5, 10, 15);
         
         this.ctx.restore();
+    }
+    
+    // Check if a point is within the track boundaries
+    isPointOnTrack(x, y) {
+        const { x: cx, y: cy } = this.trackCenter;
+        const { x: innerX, y: innerY } = this.trackInnerRadius;
+        const { x: outerX, y: outerY } = this.trackOuterRadius;
+        
+        // Calculate normalized elliptical coordinates
+        const outerValue = Math.pow((x - cx) / outerX, 2) + Math.pow((y - cy) / outerY, 2);
+        const innerValue = Math.pow((x - cx) / innerX, 2) + Math.pow((y - cy) / innerY, 2);
+        
+        // Point is on track if it's inside outer ellipse but outside inner ellipse
+        return outerValue <= 1 && innerValue >= 1;
     }
 }
 
