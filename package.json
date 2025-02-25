@@ -1,0 +1,22 @@
+{
+  "name": "cart-racing-game",
+  "version": "1.0.0",
+  "description": "A fun and exciting cart racing game for the browser.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "live-server",
+    "test": "jest"
+  },
+  "dependencies": {
+    "jest": "^27.0.0",
+    "live-server": "^1.2.1"
+  },
+  "devDependencies": {},
+  "keywords": [
+    "racing",
+    "game",
+    "browser"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
